@@ -60,7 +60,7 @@ class RunAgent:
         self.console_lvl = args['logging']['console_lvl']
 
     def create_env(self, file_name):
-        self._env = UnityEnvironment(file_name=None, worker_id=0)
+        self._env = UnityEnvironment(file_name=file_name, worker_id=0)
 
 
     #must pass in exploration_strategy object for training
@@ -109,7 +109,7 @@ class RunAgent:
             self.lg.print("-- Episode %d --" % e)
             sys.stdout.flush()
 
-            greedy = e < self.demonstration_eval_episodes
+            greedy = self._agent.epsilon < np.random.uniform()
 
             episode_samples = []
 
