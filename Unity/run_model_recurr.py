@@ -62,78 +62,6 @@ class RunAgent:
     def create_env(self, file_name):
         self._env = UnityEnvironment(file_name=None, worker_id=0)
 
-    #gives them pretty high reward
-    def train_demonstrations(self):
-        self.lg.print("Beginning Training on demonstrations", lvl="info")
-        try:
-            states_taken = np.load("demonstrated_states.npz")
-            observations_taken = np.load("demonstrated_observations.npz")
-            actions_taken = np.load("demonstrated_actions.npz")
-        except Exception as e:
-            self.lg.print("Could not load npz from file: " + str(e))
-        #import ipdb; ipdb.set_trace();
-        states_taken = []
-        observations_taken = []
-        actions_taken = []
-        try:
-            states_taken = states_taken.f.arr_0
-            observations_taken= observations_taken.f.arr_0
-            actions_taken = actions_taken.f.arr_0
-        except Exception as e:
-            self.lg.print("Could not load npz from file: " + str(e))
-
-        total_seen = 0
-
-        for ep in range(len(states_taken)):
-            self.lg.print("Training on demonstration:", ep, lvl="info")
-            #loop over episode
-            for epoch in range(self.demonstration_epochs):
-                self.lg.print("EPOCH: %d/%d" % (epoch, self.demonstration_epochs))
-                for i in reversed(range(len(states_taken[ep]) - 1)):
-                    these_states = states_taken[ep][i]
-                    these_observations = observations_taken[ep][i]
-                    these_actions = actions_taken[ep][i]
-
-                    next_states = states_taken[ep][i+1]
-                    next_observations = observations_taken[ep][i+1]
-                    next_actions = actions_taken[ep][i+1]
-
-                    done = i == len(these_states) - 1
-
-                    this_bi = BrainInfo(these_observations, these_states, None)
-                    next_bi = BrainInfo(next_observations, next_states, None)
-
-                    this_bi.local_done = [False]
-                    next_bi.local_done = [done]
-
-                    reward = self._agent.compute_reward(this_bi, next_bi, these_actions)
-
-                    #artificial boost to reward --> must check for arficial zero issues
-                    # (discount ^ numstepsleft) * TERMINAL_REWARD
-                    # logically boost the paths that have been shown to you
-                    reward = max(reward, 0) + 100
-
-                    sample = ((these_states, these_observations),
-                                these_actions,
-                                reward,
-                                (next_states, next_observations),
-                                done
-                            )
-
-                    self._agent.store_sample(sample)
-                    total_seen += 1
-
-                    if total_seen > self.batch_size*2:
-                        if total_seen % (self.train_period) == 0:
-                            self._agent.train(batch_size=self.batch_size*2)
-
-
-                    #these_states = next_states
-                    #these_observations = next_observations
-                    #these_actions = next_actions
-
-        self.lg.print("Looped over %d demonstrated samples" % total_seen)
-        return total_seen > 0
 
     #must pass in exploration_strategy object for training
     def run(self, load=False, exploration_strategy=None):
@@ -144,6 +72,10 @@ class RunAgent:
             self.lg.print("-- Running TRAINING on %d episodes of length %d -- \n" % (self.num_episodes, self.max_episode_length), lvl="info")
             self.run_training(load=load,
                               exploration_strategy=exploration_strategy)
+
+    #gives them pretty high reward
+    def train_demonstrations(self):
+        pass
  
     #must pass in exploration_strategy object
     def run_training(self, sim_train_mode=True, load=False,
@@ -165,9 +97,11 @@ class RunAgent:
 
             #reset
             brainInf = self._env.reset(train_mode=sim_train_mode)['DroneBrain']
-            # import ipdb; ipdb.set_trace()
 
             p_observation = self._agent.preprocess_observation(brainInf.visual_observations[0])
+
+            vec_obs = np.zeros(shape=(self.max_episode_length, 5))
+            vec_obs[0] = brainInf.vector_observations[0]
 
             rewards = []
             done = False
@@ -187,13 +121,15 @@ class RunAgent:
             for t in range(self.max_episode_length):
                 timestep_start = time.time()
                 #generalized act function takes in state and observations (images)
+                #import pdb
+                #pdb.set_trace()
+
 
                 if trajectory is None:
-                    action = self._agent.act(brainInf.vector_observations, p_observation, greedy=greedy)
+                    action = self._agent.act(vec_obs, p_observation, greedy=greedy)
                 else:
                     #use exploration strategy
                     action = next(trajectory)
-
                 nextBrainInf = self._env.step(action)['DroneBrain']
 
                 done = brainInf.local_done[0]
@@ -201,16 +137,20 @@ class RunAgent:
                 reward = self._agent.compute_reward(brainInf, nextBrainInf, action)
                 rewards.append(reward)
 
-                next_p_observation = self._agent.preprocess_observation(nextBrainInf.visual_observations[0])
-                #stores processed things
-                sample = (  (brainInf.vector_observations[0], p_observation), 
-                            action,
-                            reward,
-                            (nextBrainInf.vector_observations[0], next_p_observation),
-                            done    )
+                stored_example = (np.copy(vec_obs), np.copy(p_observation))
+                p_observation = self._agent.preprocess_observation(nextBrainInf.visual_observations[0])
+                vec_obs[t] = nextBrainInf.vector_observations[0]
 
-                episode_samples.append(sample)
-                self._agent.store_sample(sample)
+                if t % 4 == 0:
+                    #stores processed things
+                    sample = (  stored_example, 
+                                action,
+                                reward,
+                                (np.copy(vec_obs), np.copy(p_observation)),
+                                done    )
+
+                    episode_samples.append(sample)
+                    self._agent.store_sample(sample)
 
                 #train every experience here
                 if not self.train_after_episode and len(self._agent.replay_buffer) > self.batch_size:
@@ -224,7 +164,6 @@ class RunAgent:
                 if done:
                     break
 
-                p_observation = next_p_observation
                 brainInf = nextBrainInf
                 #print("Step took", (time.time() - timestep_start) / 1000, "milliseconds")
 
@@ -320,61 +259,7 @@ class RunAgent:
 
 
     def run_demonstrations(self, train_mode=False, load=True):
-        # if self._args['system']['os'] == 'linux':
-        #     self.lg.print("-- Can't run demonstration collection on Linux Headless --")
-
-        #TODO make arg
-        max_trajectories = 100
-
-        states_taken = []
-        observations_taken = []
-        actions_taken = []
-
-        if load:
-            try:
-                states_taken = np.load("demonstrated_states.npz")
-                observations_taken = np.load("demonstrated_observations.npz")
-                actions_taken = np.load("demonstrated_actions.npz")
-            except Exception as e:
-                self.lg.print("Could not load npz from file: " + str(e))
-        
-        for i in range(max_trajectories):
-            pause = input("Press enter to start demonstration collection")
-            done = False
-            self._env.reset(train_mode=train_mode)
-            episode_states = []
-            episode_observations = []
-            episode_actions = []
-            while not done:
-                brainInf = self._env.step()['DroneBrain']
-                ob = brainInf.visual_observations[0]
-                state = brainInf.vector_observations
-                action = brainInf.previous_vector_actions[0]
-                done = brainInf.local_done[0]
-                # norm = np.linalg.norm(states[0][3:6] - states[0][9:12])
-                # done = norm < threshold
-                episode_states.append(state)
-                episode_observations.append(ob)
-                episode_actions.append(action)
-            save  = input('Save this trajectory(y/n): ') == 'y'
-            if save:
-                states_taken.append(episode_states)
-                observations_taken.append(episode_observations)
-                actions_taken.append(episode_actions)
-            end = input('Stop collecting Data(y/n): ') == 'y'
-            if end:
-                break
-        # states_taken.extend(np.ndarray.tolist(states))
-        # actions_taken.extend(np.ndarray.tolist(actions))
-        self.lg.print("-- Saving data --")
-        states_taken = np.array(states_taken)
-        observations_taken = np.array(observations_taken)
-        actions_taken = np.array(actions_taken)
-        np.savez_compressed("demonstrated_states", states_taken)
-        np.savez_compressed("demonstrated_observations", observations_taken)
-        np.savez_compressed("demonstrated_actions", actions_taken)
-
-        self.lg.print("-- Data successfully saved --")
+        pass
 
 
 

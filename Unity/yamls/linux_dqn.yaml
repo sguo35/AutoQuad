@@ -7,7 +7,7 @@ train:
   max_replay_len: 1000
   model_file: "dqn_model.h5"
   train_period: 5 #roughly once a second
-  train_on_demonstrations: True
+  train_on_demonstrations: False
   demonstration_eval_episodes: 5
   demonstration_epochs: 4 #times to train through each demonstration
   train_after_episode: False

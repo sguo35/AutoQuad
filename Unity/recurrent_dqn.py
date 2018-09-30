@@ -3,9 +3,9 @@ import random
 import numpy as np
 from collections import deque
 from keras.models import Sequential, Model
-from keras.layers import Dense, Conv2D, Flatten, Input, GlobalAveragePooling2D
+from keras.layers import Dense, Conv2D, Flatten, Input, GlobalAveragePooling2D, BatchNormalization, CuDNNLSTM
 from keras.optimizers import Adam
-from run_model import RunAgent
+from run_model_recurr import RunAgent
 from agent import Agent
 import keras
 from yaml_loader import read_params
@@ -37,15 +37,22 @@ class DQNAgent(Agent):
         #processing images
 
         observation_input = Input(shape=self.observation_size)
-
-        observation_model = Conv2D(256, kernel_size=(3, 3),
-                         input_shape=self.observation_size, activation='relu') (observation_input)
-        observation_model = GlobalAveragePooling2D() (observation_model)
+        observation_model = BatchNormalization() (observation_input)
+        observation_model = Conv2D(256, kernel_size=(5, 5),
+                         input_shape=self.observation_size, activation='relu') (observation_model)
+        observation_model = BatchNormalization() (observation_model)
+        observation_model = Conv2D(256, kernel_size=(3, 3), strides=(2, 2),
+            activation='relu') (observation_model)
+        observation_model = BatchNormalization() (observation_model)
+        observation_model = Conv2D(256, kernel_size=(3, 3), strides=(2, 2),
+            activation='relu') (observation_model)
+        observation_model = BatchNormalization() (observation_model)
+        observation_model = Flatten() (observation_model)
         observation_model = Dense(64, activation='relu') (observation_model)
         #processing state
 
         state_input = Input(shape=self.state_size)
-        state_model = Dense(64, input_shape=self.state_size, activation='relu') (state_input)
+        state_model = CuDNNLSTM(128, input_shape=self.state_size, return_sequences=False) (state_input)
 
         #combining
 
@@ -69,18 +76,21 @@ class DQNAgent(Agent):
     def act(self, state, observation, greedy=False):
         import time
         import tensorflow as tf
+        
+
         current_time = time.time()
         self.num_actions += 1
         if not self.num_actions % 4 == 0:
             return self.last_action
-        
         if not greedy and np.random.rand() <= self.epsilon:
             self.last_action = actions[random.randrange(self.action_size)]
             return self.last_action
-        with tf.device('/cpu:0'):
-            act_values = self.model.predict([observation, state])
+        #with tf.device('/gpu:0'):
+        obs = observation
+        stt = np.array([state])
+        act_values = self.model.predict([obs, stt])
         self.last_action = actions[np.argmax(act_values[0])]
-        #print("Time taken to infer", (time.time() - current_time) / 1000, "milliseconds")
+        #print("Time taken to infer", (time.time() - current_time) * 1000, "milliseconds")
         return self.last_action # returns action
 
     def train(self, batch_size):
@@ -196,6 +206,13 @@ if __name__ == "__main__":
 
     params = read_params(yaml)
 
+    #gpu stuff
+    if params['gpu']['device'] >= 0:
+        os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
+        #from tensorflow.python.client import device_lib
+        #print(device_lib.list_local_devices())
+        os.environ["CUDA_VISIBLE_DEVICES"]=str(params['gpu']['device'])
+
     #logging stuff, override yaml's entry
     if parsed_args.log_prefix:
         params['logger']['log_prefix'] = parsed_args.log_prefix
@@ -203,10 +220,13 @@ if __name__ == "__main__":
 
     # env = UnityEnvironment(file_name="drone_sim_external", worker_id=0)
     observation_size = (128, 128, 1)
-    state_size = (5,)
+    state_size = (400, 5)
     action_size = 3
     max_replay_len = params['train']['max_replay_len']
     agent = DQNAgent(observation_size, state_size, action_size, max_replay_len=max_replay_len)
+
+    from tensorflow.python.client import device_lib
+    print(device_lib.list_local_devices())
 
     # done = False
     #batch_size = params['train']['batch_size']
