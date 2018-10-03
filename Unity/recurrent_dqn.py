@@ -217,7 +217,7 @@ if __name__ == "__main__":
 
     # env = UnityEnvironment(file_name="drone_sim_external", worker_id=0)
     observation_size = (128, 128, 1)
-    state_size = (400, 5)
+    state_size = (400, 405)
     action_size = 3
     max_replay_len = params['train']['max_replay_len']
     agent = DQNAgent(observation_size, state_size, action_size, max_replay_len=max_replay_len)

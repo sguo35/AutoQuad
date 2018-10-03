@@ -100,8 +100,8 @@ class RunAgent:
 
             p_observation = self._agent.preprocess_observation(brainInf.visual_observations[0])
 
-            vec_obs = np.zeros(shape=(self.max_episode_length, 5))
-            vec_obs[0] = brainInf.vector_observations[0]
+            vec_obs = np.zeros(shape=(self.max_episode_length, 405))
+            vec_obs[0] = brainInf.vector_observations
 
             rewards = []
             done = False
@@ -139,18 +139,17 @@ class RunAgent:
 
                 stored_example = (np.copy(vec_obs), np.copy(p_observation))
                 p_observation = self._agent.preprocess_observation(nextBrainInf.visual_observations[0])
-                vec_obs[t] = nextBrainInf.vector_observations[0]
+                vec_obs[t] = nextBrainInf.vector_observations
 
-                if t % 4 == 0:
-                    #stores processed things
-                    sample = (  stored_example, 
-                                action,
-                                reward,
-                                (np.copy(vec_obs), np.copy(p_observation)),
-                                done    )
+                #stores processed things
+                sample = (  stored_example, 
+                            action,
+                            reward,
+                            (np.copy(vec_obs), np.copy(p_observation)),
+                            done    )
 
-                    episode_samples.append(sample)
-                    self._agent.store_sample(sample)
+                episode_samples.append(sample)
+                self._agent.store_sample(sample)
 
                 #train every experience here
                 if not self.train_after_episode and len(self._agent.replay_buffer) > self.batch_size:
@@ -165,6 +164,7 @@ class RunAgent:
                     break
 
                 brainInf = nextBrainInf
+                #print(vec_obs[t])
                 #print("Step took", (time.time() - timestep_start) / 1000, "milliseconds")
 
             #LOGGING
