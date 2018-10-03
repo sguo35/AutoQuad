@@ -23,7 +23,7 @@ class DQNAgent(Agent):
 
         super().__init__(observation_size, state_size, action_size, max_replay_len=max_replay_len)
         self.gamma = 0.995    # discount rate
-        self.set_epsilons(1.0, 0.999, 0.03)
+        self.set_epsilons(0.5, 1e-5, 0.1)
         self.learning_rate = 0.005
         self._build_model()
         self.target_hard_update_interval = 100
@@ -47,7 +47,7 @@ class DQNAgent(Agent):
         observation_model = Conv2D(256, kernel_size=(3, 3), strides=(2, 2),
             activation='relu') (observation_model)
         observation_model = BatchNormalization() (observation_model)
-        observation_model = Flatten() (observation_model)
+        observation_model = GlobalAveragePooling2D() (observation_model)
         observation_model = Dense(64, activation='relu') (observation_model)
         #processing state
 
@@ -79,10 +79,7 @@ class DQNAgent(Agent):
         
 
         current_time = time.time()
-        self.num_actions += 1
-        if not self.num_actions % 4 == 0:
-            return self.last_action
-        if not greedy and np.random.rand() <= self.epsilon:
+        if not greedy:
             self.last_action = actions[random.randrange(self.action_size)]
             return self.last_action
         #with tf.device('/gpu:0'):
@@ -158,7 +155,7 @@ class DQNAgent(Agent):
         else:
             reward = dist_reward + heading_reward + velocity_reward
 
-        return reward
+        return reward / 100000
 
 
 
@@ -172,7 +169,7 @@ class DQNAgent(Agent):
         self.has_collided = self.has_collided or collision
 
         goal = int(nextBrainInf.local_done[0] and not self.has_collided)
-        reward += collision * -1000
+        reward += collision * -10000
         reward += abs(nextBrainInf.vector_observations[0][0]) * -10.0 # heading diff (normalized -1 to 1 already)
         reward += 20000 * goal
 
