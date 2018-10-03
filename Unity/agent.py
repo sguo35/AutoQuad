@@ -58,7 +58,7 @@ class Agent:
 
     def epsilon_update(self):
         if self.epsilon > self.epsilon_min:
-            self.epsilon *= self.epsilon_decay
+            self.epsilon -= self.epsilon_decay
 
     def load(self, name):
         self.model.load_weights(name)
