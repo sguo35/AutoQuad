@@ -13,6 +13,7 @@ class Agent:
         self.state_size = state_size
         self.action_size = action_size
         self.replay_buffer = deque(maxlen=max_replay_len)
+        self.max_replay_len = max_replay_len
         self.model = Sequential()
         self.set_epsilons(0.0, 0.0, 0.0)
 
@@ -46,6 +47,9 @@ class Agent:
             self.replay_buffer.append(sample)
         else:
             print("Cannot store sample -- incorrect length")
+        if len(self.replay_buffer) > self.max_replay_len:
+            self.replay_buffer.popleft()
+        
 
     #returns current epsilon, and decay rate in a tuple
     def get_epsilons(self):

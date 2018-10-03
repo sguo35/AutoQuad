@@ -140,16 +140,15 @@ class RunAgent:
                 stored_example = (np.copy(vec_obs), np.copy(p_observation))
                 p_observation = self._agent.preprocess_observation(nextBrainInf.visual_observations[0])
                 vec_obs[t] = nextBrainInf.vector_observations
-
-                #stores processed things
-                sample = (  stored_example, 
-                            action,
-                            reward,
-                            (np.copy(vec_obs), np.copy(p_observation)),
-                            done    )
-
-                episode_samples.append(sample)
-                self._agent.store_sample(sample)
+                if t % 5 == 0:
+                    #stores processed things
+                    sample = (  stored_example, 
+                                action,
+                                reward,
+                                (np.copy(vec_obs), np.copy(p_observation)),
+                                done    )
+                    episode_samples.append(sample)
+                    self._agent.store_sample(sample)
 
                 #train every experience here
                 if not self.train_after_episode and len(self._agent.replay_buffer) > self.batch_size:
